@@ -64,6 +64,11 @@ pip install -e ".[dev]"
 billing-generator --sink stdout --interval 2 --batch-size 5
 ```
 
+## Project history
+
+Every work session is logged in [`docs/devlog.md`](docs/devlog.md) — decisions,
+what was built, and why. It's the canonical record of how this project evolved.
+
 ## Roadmap
 
 See [`docs/roadmap.md`](docs/roadmap.md). Short version:
