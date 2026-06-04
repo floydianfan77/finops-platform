@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://finops-platform.local/schemas/billing/focus_billing_record.schema.json",
+  "title": "FocusBillingRecord",
+  "description": "A single cost & usage line item, aligned to the FinOps Open Cost and Usage Specification (FOCUS). Field names follow FOCUS conventions where practical.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "RecordId",
+    "ProviderName",
+    "BillingAccountId",
+    "BillingPeriodStart",
+    "BillingPeriodEnd",
+    "ChargePeriodStart",
+    "ChargePeriodEnd",
+    "ServiceName",
+    "ServiceCategory",
+    "ChargeCategory",
+    "RegionId",
+    "ResourceId",
+    "PricingQuantity",
+    "PricingUnit",
+    "ListUnitPrice",
+    "ListCost",
+    "EffectiveCost",
+    "BilledCost",
+    "BillingCurrency"
+  ],
+  "properties": {
+    "RecordId": {
+      "type": "string",
+      "description": "Unique identifier for this billing line item (UUID)."
+    },
+    "ProviderName": {
+      "type": "string",
+      "description": "Cloud provider that generated the cost.",
+      "enum": ["AWS", "GCP", "Azure", "OCI"]
+    },
+    "PublisherName": {
+      "type": "string",
+      "description": "Entity that produced the service (often same as provider)."
+    },
+    "BillingAccountId": {
+      "type": "string",
+      "description": "Account/tenant responsible for the charge."
+    },
+    "BillingAccountName": {
+      "type": "string"
+    },
+    "SubAccountId": {
+      "type": ["string", "null"],
+      "description": "Sub-account / project / subscription within the billing account."
+    },
+    "BillingPeriodStart": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "BillingPeriodEnd": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ChargePeriodStart": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Start of the period this specific charge applies to."
+    },
+    "ChargePeriodEnd": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ServiceName": {
+      "type": "string",
+      "description": "Specific service, e.g. 'Amazon EC2', 'BigQuery'."
+    },
+    "ServiceCategory": {
+      "type": "string",
+      "description": "High-level category per FOCUS.",
+      "enum": [
+        "Compute",
+        "Storage",
+        "Databases",
+        "Networking",
+        "Analytics",
+        "AI and Machine Learning",
+        "Management and Governance",
+        "Security",
+        "Other"
+      ]
+    },
+    "ChargeCategory": {
+      "type": "string",
+      "description": "Nature of the charge.",
+      "enum": ["Usage", "Purchase", "Tax", "Credit", "Adjustment"]
+    },
+    "ChargeDescription": {
+      "type": "string"
+    },
+    "RegionId": {
+      "type": "string",
+      "description": "Provider region identifier, e.g. 'us-east-1'."
+    },
+    "ResourceId": {
+      "type": "string",
+      "description": "Identifier of the resource that incurred the cost."
+    },
+    "ResourceType": {
+      "type": ["string", "null"],
+      "description": "Type of resource, e.g. 't3.medium', 'gp3-volume'."
+    },
+    "PricingQuantity": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Amount of usage priced (e.g. hours, GB)."
+    },
+    "PricingUnit": {
+      "type": "string",
+      "description": "Unit for PricingQuantity, e.g. 'Hours', 'GB-Month'."
+    },
+    "ListUnitPrice": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Public per-unit price before discounts."
+    },
+    "ListCost": {
+      "type": "number",
+      "description": "PricingQuantity * ListUnitPrice (undiscounted)."
+    },
+    "EffectiveCost": {
+      "type": "number",
+      "description": "Amortized cost after discounts/commitments."
+    },
+    "BilledCost": {
+      "type": "number",
+      "description": "Amount actually invoiced for this line item."
+    },
+    "BillingCurrency": {
+      "type": "string",
+      "description": "ISO 4217 currency code.",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "Tags": {
+      "type": "object",
+      "description": "Arbitrary cost-allocation tags (key/value).",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}
