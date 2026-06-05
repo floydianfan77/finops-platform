@@ -1,69 +1,98 @@
 # ---------------------------------------------------------------------------
 # Local development environment for the FinOps platform.
 #
-# Step 1 (now):   only the billing-generator runs, emitting to stdout/file.
-# Step 2 (later): uncomment ONE broker block (Red Panda OR Kafka) and switch
-#                 BILLING_SINK=broker. The generator code already supports it.
+# Step 2: two interchangeable, Kafka-protocol brokers are available. They are
+# gated behind Compose "profiles" so you start only what you want:
+#
+#   Red Panda only:   docker compose --profile redpanda up -d
+#   Kafka only:       docker compose --profile kafka    up -d
+#   Both (compare):   docker compose --profile redpanda --profile kafka up -d
+#   The generator:    docker compose --profile app      up
+#
+# They listen on DIFFERENT host ports so both can run at once:
+#   Red Panda -> localhost:9092      Kafka -> localhost:9094
+#
+# Point the generator at one by setting BROKER_BOOTSTRAP_SERVERS accordingly.
+# The generator code is identical for both (same Kafka protocol).
 # ---------------------------------------------------------------------------
 services:
+  # =========================================================================
+  # The billing producer (run from host CLI for the tutorial, or here via the
+  # "app" profile inside Docker).
+  # =========================================================================
   billing-generator:
     build: ./services/billing-generator
     container_name: finops-billing-generator
+    profiles: ["app"]
     env_file:
       - .env
     environment:
-      # In-container default; override in .env as needed
-      BILLING_SINK: ${BILLING_SINK:-stdout}
+      BILLING_SINK: ${BILLING_SINK:-broker}
     volumes:
       - ./data:/app/data
-    # depends_on:
-    #   - redpanda      # enable in step 2
 
-  # -------------------------------------------------------------------------
-  # OPTION A — Red Panda (Kafka-compatible, single binary, lightweight)
-  # -------------------------------------------------------------------------
-  # redpanda:
-  #   image: redpandadata/redpanda:latest
-  #   container_name: finops-redpanda
-  #   command:
-  #     - redpanda start
-  #     - --overprovisioned
-  #     - --smp 1
-  #     - --memory 1G
-  #     - --reserve-memory 0M
-  #     - --node-id 0
-  #     - --check=false
-  #     - --kafka-addr PLAINTEXT://0.0.0.0:9092
-  #     - --advertise-kafka-addr PLAINTEXT://localhost:9092
-  #   ports:
-  #     - "9092:9092"
-  #
-  # redpanda-console:
-  #   image: redpandadata/console:latest
-  #   environment:
-  #     KAFKA_BROKERS: redpanda:9092
-  #   ports:
-  #     - "8080:8080"
-  #   depends_on:
-  #     - redpanda
+  # =========================================================================
+  # OPTION A - Red Panda (Kafka-compatible, single C++ binary, lightweight)
+  # Host port: 9092
+  # =========================================================================
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: finops-redpanda
+    profiles: ["redpanda"]
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      # Two listeners: EXTERNAL (your host, localhost:9092) and INTERNAL
+      # (other containers like the console, redpanda:9093). Same advertised-
+      # listener pattern Kafka needs.
+      - --kafka-addr=INTERNAL://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      - --advertise-kafka-addr=INTERNAL://redpanda:9093,EXTERNAL://localhost:9092
+    ports:
+      - "9092:9092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
 
-  # -------------------------------------------------------------------------
-  # OPTION B — Apache Kafka (KRaft mode, no Zookeeper)
-  # -------------------------------------------------------------------------
-  # kafka:
-  #   image: apache/kafka:latest
-  #   container_name: finops-kafka
-  #   ports:
-  #     - "9092:9092"
-  #   environment:
-  #     KAFKA_NODE_ID: 1
-  #     KAFKA_PROCESS_ROLES: broker,controller
-  #     KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-  #     KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-  #     KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: finops-redpanda-console
+    profiles: ["redpanda"]
+    environment:
+      KAFKA_BROKERS: redpanda:9093
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda
 
-# volumes:
-#   redpanda-data:
+  # =========================================================================
+  # OPTION B - Apache Kafka (KRaft mode, no Zookeeper)
+  # Host port: 9094  (mapped to the container's internal 9092)
+  # =========================================================================
+  kafka:
+    image: apache/kafka:latest
+    container_name: finops-kafka
+    hostname: kafka
+    profiles: ["kafka"]
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Two client listeners: HOST (reachable from your machine on :9094) and
+      # DOCKER (reachable from other containers / in-container tools as kafka:9092).
+      KAFKA_LISTENERS: HOST://0.0.0.0:9094,DOCKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9094,DOCKER://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+volumes:
+  redpanda-data:

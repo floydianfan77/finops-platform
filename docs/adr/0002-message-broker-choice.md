@@ -1,7 +1,7 @@
 # 2. Message broker choice (Kafka vs Red Panda)
 
-- **Status:** Proposed (decision deferred to step 2)
-- **Date:** 2026-06-04
+- **Status:** Accepted (step 2 — run both locally)
+- **Date:** 2026-06-04 (updated 2026-06-05)
 
 ## Context
 
@@ -16,12 +16,18 @@ open-source and expose the **Kafka protocol**:
 
 ## Decision
 
-**Deferred.** We will choose during step 2. To avoid lock-in in the meantime:
+**Run both, locally, behind Compose profiles.** Rather than pick one, we keep both
+available because they share the Kafka protocol and the choice is purely ops/config:
 
-- Producers write through a `Sink` abstraction; the broker is one implementation.
-- The `broker` sink will use **`confluent-kafka`**, which works against **either**
-  Kafka or Red Panda unchanged (same protocol).
-- `docker-compose.yml` already contains ready-to-enable blocks for both options.
+- Producers write through a `Sink` abstraction; the `broker` sink is one implementation.
+- The `broker` sink uses **`confluent-kafka`**, verified unchanged against **both**
+  Apache Kafka and Red Panda (identical key→partition behavior observed).
+- `docker-compose.yml` exposes both via profiles (`redpanda` on `:9092`, `kafka` on
+  `:9094`); select a target with `BROKER_BOOTSTRAP_SERVERS`.
+- Both use dual named listeners (host vs. docker network) to handle advertised
+  addresses correctly for host CLI, in-container tools, and the console.
+
+Production target can be revisited later; nothing in the code depends on it.
 
 ## Consequences
 

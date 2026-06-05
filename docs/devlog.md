@@ -9,6 +9,49 @@ so the project's history (and the learning journey) is preserved in the repo its
 
 ---
 
+## Session 2 — 2026-06-05 — Step 2 (message broker: Kafka + Red Panda)
+
+### Context
+Resumed in teaching mode (step-by-step walkthrough of step 1), then advanced into
+step 2: standing up the event backbone. Goal was to make the `broker` sink real and
+prove the broker-agnostic design end to end.
+
+### Decisions
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Broker(s) | **Both Kafka and Red Panda**, side by side | Same Kafka protocol; great for learning + comparison |
+| Run model | Compose **profiles** (`redpanda`, `kafka`, `app`) | Start only what you need |
+| Ports | Red Panda `9092`, Kafka `9094` | Both can run simultaneously without collision |
+| Topic | `finops.billing.raw`, **3 partitions**, RF 1 | Demonstrate keying/partitioning/ordering locally |
+| Listeners | Dual (EXTERNAL/HOST + INTERNAL/DOCKER) on both brokers | Fix advertised-listener issue for host vs. in-Docker clients |
+
+### Actions
+- Installed optional `broker` extra (`confluent-kafka`).
+- Reworked `docker-compose.yml`: both brokers behind profiles, distinct ports, named
+  volume for Red Panda, Red Panda console on `:8080`.
+- Created the topic with 3 partitions on each broker.
+- Ran `billing-generator --sink broker` against Red Panda (`:9092`) and Kafka (`:9094`)
+  with the **same code** — identical key→partition results on both.
+- Verified by consuming records back (`rpk` / `kafka-console-consumer`) and via the
+  Red Panda console UI.
+- Debugged the **advertised-listener** problem on both brokers; fixed with dual
+  named listeners (host vs. docker network).
+
+### Learnings (concepts studied)
+- **Broker / topic / partition / offset / consumer group / retention / replication.**
+- **Keying** (`BillingAccountId`) → same partition → ordering guarantee (seen live).
+- **Advertised listeners**: a broker must advertise an address valid for the *caller's*
+  network; multi-network access needs separate named listeners.
+- **Protocol compatibility**: Red Panda matched Kafka down to the default partitioner.
+- **Durability**: messages persisted across container restart via a named volume.
+
+### Next steps
+- [ ] Optionally finish step-1 lessons (scheduler, CLI, tests).
+- [ ] Step 3: build a consumer/ingestion service reading `finops.billing.raw`.
+- [ ] Consider schema registry decision (follow-up ADR).
+
+---
+
 ## Session 1 — 2026-06-04 — Project kickoff & Step 1 (billing generator)
 
 ### Context

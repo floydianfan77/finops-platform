@@ -14,15 +14,15 @@ Produce realistic, FOCUS-aligned billing records on a schedule.
 - [x] CLI + scheduler (batch size + interval)
 - [ ] (nice-to-have) cost anomalies / spikes injection
 
-## Step 2 — Message broker 🔜
+## Step 2 — Message broker ✅
 
-Introduce the event backbone (decision pending: **Kafka** vs **Red Panda**).
+Event backbone running. We run **both** Kafka and Red Panda (same Kafka protocol).
 
-- [ ] Decide broker (see `docs/adr/0002-message-broker-choice.md`)
-- [ ] Add broker to `docker-compose.yml` (blocks already prepared)
-- [ ] Implement `broker` sink with `confluent-kafka`
-- [ ] Define topic naming + partitioning strategy
-- [ ] Schema registry? (Avro/JSON Schema) — decide
+- [x] Decide broker (run both; see `docs/adr/0002-message-broker-choice.md`)
+- [x] Add broker(s) to `docker-compose.yml` (profiles: `redpanda`, `kafka`, `app`)
+- [x] Implement `broker` sink with `confluent-kafka` (verified against both)
+- [x] Define topic naming (`finops.billing.raw`) + partitioning (key = `BillingAccountId`, 3 partitions)
+- [ ] Schema registry? (Avro/JSON Schema) — decide (follow-up ADR)
 
 ## Step 3 — Ingestion + storage ⏳
 
