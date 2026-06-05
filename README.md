@@ -20,8 +20,8 @@ cloud cost & usage data. This is a learning/portfolio monorepo built incremental
               +-------------+-------------+
               v             v             v
         ingestion     transformation   alerting
-        service        (FOCUS norm.)   (budgets)
-        (step 3 done)  (step 4)        (step 5)
+        service       (gold rollups)   (budgets)
+        (step 3 done)  (step 4 done)   (step 5)
               \             |             /
                v            v            v
                 +------------------------+
@@ -35,7 +35,8 @@ cloud cost & usage data. This is a learning/portfolio monorepo built incremental
 finops-platform/
 ├── services/                # Independently deployable services
 │   ├── billing-generator/   # Step 1: synthetic FOCUS billing producer
-│   └── ingestion-service/   # Step 3: consumer -> validate -> SQLite
+│   ├── ingestion-service/   # Step 3: consumer -> validate -> SQLite
+│   └── aggregation-service/ # Step 4: SQLite -> gold cost rollups
 ├── libs/                    # Shared, importable Python packages
 │   └── common/              # finops_common: shared model + topic names
 ├── schemas/                 # Language-agnostic data contracts (JSON Schema)
@@ -78,5 +79,5 @@ See [`docs/roadmap.md`](docs/roadmap.md). Short version:
 - [x] **Step 1** — Synthetic billing generator (FOCUS-aligned)
 - [x] **Step 2** — Message broker (Kafka **and** Red Panda) as the event backbone
 - [x] **Step 3** — Ingestion service: consume → validate → SQLite (+ dead-letter)
-- [ ] **Step 4** — Transformation / cost normalization
+- [x] **Step 4** — Transformation: gold cost rollups (by service / account / provider / tag)
 - [ ] **Step 5** — API + dashboard + budget alerting

@@ -49,6 +49,21 @@ services:
     volumes:
       - ./data:/app/data
 
+  # Batch job (step 4): rebuilds the gold rollups from the landed SQLite DB.
+  # Run on demand:  docker compose --profile app run --rm aggregation-service --report
+  aggregation-service:
+    build:
+      context: .
+      dockerfile: services/aggregation-service/Dockerfile
+    container_name: finops-aggregation
+    profiles: ["app"]
+    env_file:
+      - .env
+    environment:
+      AGG_DB_PATH: ${AGG_DB_PATH:-/app/data/finops.db}
+    volumes:
+      - ./data:/app/data
+
   # =========================================================================
   # OPTION A - Red Panda (Kafka-compatible, single C++ binary, lightweight)
   # Host port: 9092

@@ -32,10 +32,15 @@ Event backbone running. We run **both** Kafka and Red Panda (same Kafka protocol
 - [x] Shared contract promoted to `libs/common` (`finops-common`)
 - [ ] (later) land to a warehouse/lake for scale
 
-## Step 4 — Transformation ⏳
+## Step 4 — Transformation ✅
 
-- [ ] Normalize/enrich to canonical FOCUS
-- [ ] Aggregations (by account, service, tag, period)
+Gold-layer rollups built from the landed `billing_records` table (`services/aggregation-service`).
+
+- [x] Idempotent transformation (CREATE TABLE AS SELECT → re-runnable, never doubles)
+- [x] Aggregations bucketed by usage day: by service, by account, by provider
+- [x] Cost-by-tag allocation via `json_each` (team / environment / cost_center)
+- [x] Tests: correct sums, tag expansion, idempotent rebuild
+- [ ] (later) normalize/enrich to canonical FOCUS as data sources grow
 
 ## Step 5 — API + UI + alerting ⏳
 

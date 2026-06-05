@@ -5,6 +5,7 @@
 COMMON_DIR := libs/common
 GEN_DIR := services/billing-generator
 INGEST_DIR := services/ingestion-service
+AGG_DIR := services/aggregation-service
 
 .PHONY: help
 help: ## Show this help
@@ -16,6 +17,7 @@ install: ## Install shared lib + all services (editable, with dev extras)
 	pip install -e "$(COMMON_DIR)"
 	cd $(GEN_DIR) && pip install -e ".[dev]"
 	cd $(INGEST_DIR) && pip install -e ".[dev]"
+	cd $(AGG_DIR) && pip install -e ".[dev]"
 
 .PHONY: gen
 gen: ## Run the billing generator to stdout
@@ -33,10 +35,15 @@ gen-broker: ## Stream the billing generator to the broker (Red Panda :9092)
 ingest: ## Consume the topic into SQLite (from the beginning)
 	cd $(INGEST_DIR) && ingestion-service --from-beginning
 
+.PHONY: aggregate
+aggregate: ## Build gold rollups from the landed SQLite data (+ summary)
+	cd $(AGG_DIR) && aggregation-service --db-path ../ingestion-service/data/finops.db --report
+
 .PHONY: test
 test: ## Run tests for all services
 	cd $(GEN_DIR) && pytest -q
 	cd $(INGEST_DIR) && pytest -q
+	cd $(AGG_DIR) && pytest -q
 
 .PHONY: lint
 lint: ## Lint with ruff

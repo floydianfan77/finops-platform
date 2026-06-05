@@ -20,10 +20,11 @@ incrementally in Python. It explains the *why* behind every decision, the
 6. [Step 1 — Synthetic billing generator](#6-step-1--synthetic-billing-generator)
 7. [Step 2 — Message broker (Kafka & Red Panda)](#7-step-2--message-broker-kafka--red-panda)
 8. [Step 3 — Ingestion service](#8-step-3--ingestion-service)
-9. [Running the whole platform](#9-running-the-whole-platform)
-10. [Python & engineering concepts learned](#10-python--engineering-concepts-learned)
-11. [Roadmap (what's next)](#11-roadmap-whats-next)
-12. [What this project demonstrates](#12-what-this-project-demonstrates)
+9. [Step 4 — Transformation (gold rollups)](#9-step-4--transformation-gold-rollups)
+10. [Running the whole platform](#10-running-the-whole-platform)
+11. [Python & engineering concepts learned](#11-python--engineering-concepts-learned)
+12. [Roadmap (what's next)](#12-roadmap-whats-next)
+13. [What this project demonstrates](#13-what-this-project-demonstrates)
 
 ---
 
@@ -96,6 +97,28 @@ events, and new services can re-read history from the beginning.
                      v
             SQL analytics (cost by service / provider / team / period)
             Step 4 (aggregation) and Step 5 (API + dashboard) build on this.
+```
+
+The same pipeline as a diagram (renders on GitHub):
+
+```mermaid
+flowchart TD
+    G["billing-generator<br/>(Step 1 · producer)"]
+    B["message broker<br/>Kafka + Red Panda<br/>(Step 2)<br/>topic: finops.billing.raw"]
+    I["ingestion-service<br/>(Step 3 · consumer)<br/>validate + persist"]
+    DB[("SQLite<br/>billing_records<br/>(bronze)")]
+    DLQ["dead_letter.ndjson<br/>(quarantined)"]
+    A["aggregation-service<br/>(Step 4)<br/>rebuild gold rollups"]
+    GOLD[("agg_cost_by_service<br/>agg_cost_by_account<br/>agg_cost_by_provider<br/>agg_cost_by_tag<br/>(gold)")]
+    API["API + dashboard + alerts<br/>(Step 5 · planned)"]
+
+    G -- "FOCUS JSON" --> B
+    B -- "stream events" --> I
+    I -- "valid" --> DB
+    I -- "invalid" --> DLQ
+    DB -- "GROUP BY day / service / tag" --> A
+    A --> GOLD
+    GOLD -.-> API
 ```
 
 ### Data flow in one sentence
@@ -436,21 +459,107 @@ Note credits are **negative** — the Step-1 logic survives all the way to analy
 
 ---
 
-## 9. Running the whole platform
+## 9. Step 4 — Transformation (gold rollups)
+
+**Service:** `services/aggregation-service` · **Reads:** `billing_records` · **Writes:** `agg_*` tables
+
+### 9.1 Why a transformation step?
+Running `GROUP BY` over millions of raw rows on *every* dashboard load is slow and
+wasteful. Instead we compute the answers **once** and store them in small, ready-to-read
+**gold** tables. This is the **medallion architecture**:
+
+```
+billing_records (bronze · raw, one row per charge)
+        │  aggregation-service  (GROUP BY day, service, account, provider, tag)
+        ▼
+agg_cost_by_service / _account / _provider / _tag   (gold · pre-summed)
+```
+
+```mermaid
+flowchart LR
+    BR[("billing_records<br/>bronze · raw rows")]
+    T["aggregation-service<br/>rebuild_all()"]
+    S[("agg_cost_by_service")]
+    AC[("agg_cost_by_account")]
+    P[("agg_cost_by_provider")]
+    TG[("agg_cost_by_tag")]
+    BR --> T
+    T --> S
+    T --> AC
+    T --> P
+    T --> TG
+```
+
+### 9.2 Idempotent by construction
+Each rollup is rebuilt with **`CREATE TABLE AS SELECT`** (drop + recreate). Running the
+transformation twice produces **identical** tables — numbers never double. That makes it
+safe to re-run on a schedule, the cornerstone of reliable data pipelines.
+
+```python
+for table, select_sql in _ROLLUPS:
+    conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.execute(f"CREATE TABLE {table} AS {select_sql}")
+```
+
+### 9.3 The four gold tables
+All are bucketed by **usage day** (`date(charge_period_start)`):
+
+| Table | Grain | Answers |
+|-------|-------|---------|
+| `agg_cost_by_service`  | day × service  | "Which services cost the most?" |
+| `agg_cost_by_account`  | day × account  | "Which tenant/customer is most expensive?" |
+| `agg_cost_by_provider` | day × provider | "How is spend split across AWS/Azure/GCP?" |
+| `agg_cost_by_tag`      | day × tag k/v  | "What does each team / environment cost?" |
+
+### 9.4 Cost-by-tag with `json_each`
+Tags are stored as a JSON column. SQLite's **`json_each`** expands that JSON into one
+row per key/value, so a single `GROUP BY` allocates cost across `team`, `environment`,
+and `cost_center` — the heart of FinOps **cost allocation (showback/chargeback)**:
+
+```sql
+SELECT date(b.charge_period_start) AS usage_date,
+       t.key AS tag_key, t.value AS tag_value,
+       ROUND(SUM(b.billed_cost), 6) AS billed_cost
+FROM billing_records AS b, json_each(b.tags) AS t
+GROUP BY usage_date, tag_key, tag_value;
+```
+
+### 9.5 Tests
+Four tests (`tests/test_transform.py`) seed a tiny in-memory dataset and assert:
+correct service sums (`100 + 50 = 150`), correct tag expansion (`payments = 150`), all
+gold tables created, and **idempotency** (running `rebuild_all` twice yields equal counts).
+
+### 9.6 Proven output (over the 86 landed records)
+```
+rebuilt gold tables: agg_cost_by_service=10, agg_cost_by_account=12,
+                     agg_cost_by_provider=3, agg_cost_by_tag=93
+
+Top services by billed cost      Cost by tag: team
+  Amazon CloudFront  $14,840.86    ml         $15,891.59
+  Amazon S3          $11,830.99    data       $14,185.85
+  AWS Lambda          $9,039.77    payments   $12,916.51
+  Azure SQL Database  $8,434.56    security   $11,354.20
+  Google Compute Eng. $8,179.16    growth      $8,846.94
+```
+
+---
+
+## 10. Running the whole platform
 
 > Prerequisites: Python 3.10+, Docker Desktop running. Commands shown for Windows
 > PowerShell; adjust paths/venv activation for macOS/Linux.
 
-### 9.1 Install (editable)
+### 10.1 Install (editable)
 ```powershell
 # from the repo root
 pip install -e libs/common
 cd services/billing-generator ; pip install -e ".[dev,broker]" ; cd ../..
 cd services/ingestion-service ; pip install -e ".[dev]" ; cd ../..
+cd services/aggregation-service ; pip install -e ".[dev]" ; cd ../..
 ```
 (Or, where `make` is available: `make install`.)
 
-### 9.2 Start a broker
+### 10.2 Start a broker
 ```powershell
 # Red Panda (has a web console at http://localhost:8080)
 docker compose --profile redpanda up -d
@@ -462,7 +571,7 @@ docker compose --profile kafka up -d
 docker compose --profile redpanda --profile kafka up -d
 ```
 
-### 9.3 Create the topic (3 partitions)
+### 10.3 Create the topic (3 partitions)
 ```powershell
 # Red Panda
 docker exec finops-redpanda rpk topic create finops.billing.raw --partitions 3 --replicas 1
@@ -472,7 +581,7 @@ docker exec finops-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka
   --create --topic finops.billing.raw --partitions 3 --replication-factor 1
 ```
 
-### 9.4 Produce billing records
+### 10.4 Produce billing records
 ```powershell
 cd services/billing-generator
 
@@ -486,29 +595,41 @@ billing-generator --sink broker --batch-size 4 --interval 2 --max-batches 20
 $env:BROKER_BOOTSTRAP_SERVERS="localhost:9094"; billing-generator --sink broker --max-batches 5
 ```
 
-### 9.5 Consume into SQLite
+### 10.5 Consume into SQLite
 ```powershell
 cd services/ingestion-service
 ingestion-service --from-beginning --max-messages 100        # Red Panda
 # or:  ingestion-service --bootstrap-servers localhost:9094 --from-beginning
 ```
 
-### 9.6 Query the results
+### 10.6 Build the gold rollups (Step 4)
 ```powershell
+cd services/aggregation-service
+aggregation-service --db-path ../ingestion-service/data/finops.db --report
+```
+(Or, where `make` is available: `make aggregate`.) Re-run any time — it's idempotent.
+
+### 10.7 Query the results
+```powershell
+# raw (bronze)
 python -c "import sqlite3; c=sqlite3.connect('./data/finops.db'); print(c.execute('SELECT service_name, ROUND(SUM(billed_cost),2) FROM billing_records GROUP BY service_name ORDER BY 2 DESC').fetchall())"
+
+# pre-aggregated (gold): cost by team
+python -c "import sqlite3; c=sqlite3.connect('./data/finops.db'); print(c.execute(\"SELECT tag_value, ROUND(SUM(billed_cost),2) FROM agg_cost_by_tag WHERE tag_key='team' GROUP BY tag_value ORDER BY 2 DESC\").fetchall())"
 ```
 
-### 9.7 Inspect visually
+### 10.8 Inspect visually
 Open the Red Panda console at **http://localhost:8080** → Topics →
 `finops.billing.raw` to browse messages, keys, partitions, and offsets.
 
-### 9.8 Run tests
+### 10.9 Run tests
 ```powershell
 cd services/billing-generator ; python -m pytest -q ; cd ../..
 cd services/ingestion-service ; python -m pytest -q ; cd ../..
+cd services/aggregation-service ; python -m pytest -q ; cd ../..
 ```
 
-### 9.9 Shut down
+### 10.10 Shut down
 ```powershell
 docker compose --profile redpanda --profile kafka down      # stop (keep data)
 docker compose --profile redpanda --profile kafka down -v   # stop + wipe broker data
@@ -516,7 +637,7 @@ docker compose --profile redpanda --profile kafka down -v   # stop + wipe broker
 
 ---
 
-## 10. Python & engineering concepts learned
+## 11. Python & engineering concepts learned
 
 A checklist of what this project teaches, by area.
 
@@ -549,6 +670,8 @@ A checklist of what this project teaches, by area.
 - At-least-once delivery + idempotent writes
 - Dead-letter queue pattern
 - SQLite persistence and SQL aggregation
+- Medallion architecture (bronze → gold); idempotent transforms (`CREATE TABLE AS SELECT`)
+- Pre-aggregation for fast reads; tag-based cost allocation via `json_each`
 
 **Tooling & ops**
 - pytest (fixtures, assertions, failure-path tests)
@@ -558,19 +681,19 @@ A checklist of what this project teaches, by area.
 
 ---
 
-## 11. Roadmap (what's next)
+## 12. Roadmap (what's next)
 
 | Step | Status | Summary |
 |------|--------|---------|
 | 1 — Billing generator | ✅ | Synthetic FOCUS records, pluggable sinks |
 | 2 — Message broker | ✅ | Kafka **and** Red Panda; topic + partitioning |
 | 3 — Ingestion + storage | ✅ | Consume → validate → SQLite (+ dead-letter) |
-| 4 — Transformation | ⏳ | Pre-aggregated rollups (cost by service/account/tag/period) — the *gold* layer of a medallion architecture |
+| 4 — Transformation | ✅ | Pre-aggregated *gold* rollups (cost by service/account/provider/tag/day); idempotent rebuilds |
 | 5 — API + UI + alerting | ⏳ | Query API, dashboard (trends, top services, anomalies), budgets & alerts |
 
 ---
 
-## 12. What this project demonstrates
+## 13. What this project demonstrates
 
 For a portfolio, this project shows the ability to:
 

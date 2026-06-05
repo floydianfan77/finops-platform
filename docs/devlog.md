@@ -9,6 +9,47 @@ so the project's history (and the learning journey) is preserved in the repo its
 
 ---
 
+## Session 4 — 2026-06-05 — Step 4 (transformation / gold aggregations)
+
+### Context
+Raw records are landing in SQLite (`billing_records`, the *bronze* layer). Dashboards and
+APIs shouldn't `GROUP BY` over raw rows on every read. Step 4 adds a transformation that
+pre-computes cost rollups (the *gold* layer) so downstream reads are tiny and fast.
+
+### Decisions
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Where gold lives | Same SQLite DB, `agg_*` tables | Simple now; medallion (bronze→gold) shape stays valid for a warehouse later |
+| Rebuild strategy | `CREATE TABLE AS SELECT` (drop + recreate) | Idempotent: re-running never doubles numbers; safe on a schedule |
+| Time grain | Usage day, `date(charge_period_start)` | Natural bucket for cost trends |
+| Tag allocation | SQLite `json_each` over `tags` | Expands JSON tags into rows → cost by team/environment/cost_center |
+| New service vs add-on | New `services/aggregation-service` | Keeps each stage independently runnable/deployable |
+
+### Actions
+- Built `aggregation-service`:
+  - `transform.py` — four gold rollups (`agg_cost_by_service`, `_account`, `_provider`, `_tag`),
+    each `DROP`+`CREATE TABLE AS SELECT`; `rebuild_all()` returns row counts.
+  - `config.py` — `AGG_`-prefixed settings (`db_path`).
+  - `main.py` — CLI (`--db-path`, `--report`) printing top services + cost-by-team.
+  - `README.md`, `Dockerfile`, `pyproject.toml`.
+- Wrote tests (4) — correct sums, tag expansion, idempotent rebuild — all passing.
+- Ran over the real landed data (86 records): built `agg_cost_by_service=10`,
+  `_account=12`, `_provider=3`, `_tag=93`. Verified top services (CloudFront, S3, Lambda)
+  and cost-by-team (ml, data, payments…).
+- Updated Makefile (`aggregate` target, install/test wiring), `.env.example`, roadmap, README, manual.
+
+### Learnings (concepts to study)
+- **Medallion architecture**: bronze (raw) → gold (aggregated) layering.
+- **Idempotent transforms**: rebuild-from-scratch is simpler & safer than incremental upserts here.
+- **`json_each`**: relational expansion of JSON columns for tag-based cost allocation.
+- **Pre-aggregation**: trade write-time compute for cheap read-time queries.
+
+### Next steps
+- [ ] Step 5: query API + dashboard (cost trends, top services) + budgets/alerts.
+- [ ] (later) move gold to a warehouse/lake as volume grows.
+
+---
+
 ## Session 3 — 2026-06-05 — Step 3 (ingestion service + shared contract)
 
 ### Context
