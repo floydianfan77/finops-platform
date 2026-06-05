@@ -21,13 +21,31 @@ services:
   # "app" profile inside Docker).
   # =========================================================================
   billing-generator:
-    build: ./services/billing-generator
+    build:
+      context: .
+      dockerfile: services/billing-generator/Dockerfile
     container_name: finops-billing-generator
     profiles: ["app"]
     env_file:
       - .env
     environment:
       BILLING_SINK: ${BILLING_SINK:-broker}
+      # Inside Docker, reach the broker by its service name (not localhost).
+      BROKER_BOOTSTRAP_SERVERS: ${BROKER_BOOTSTRAP_SERVERS:-redpanda:9093}
+    volumes:
+      - ./data:/app/data
+
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: services/ingestion-service/Dockerfile
+    container_name: finops-ingestion
+    profiles: ["app"]
+    env_file:
+      - .env
+    environment:
+      # Inside Docker, reach the broker by its service name (not localhost).
+      INGEST_BOOTSTRAP_SERVERS: ${INGEST_BOOTSTRAP_SERVERS:-redpanda:9093}
     volumes:
       - ./data:/app/data
 

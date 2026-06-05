@@ -10,7 +10,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Iterable
 
-from billing_generator.models import FocusBillingRecord
+from finops_common.models import FocusBillingRecord
 
 
 class Sink(abc.ABC):

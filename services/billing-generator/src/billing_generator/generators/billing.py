@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from finops_common.models import FocusBillingRecord
+
 from billing_generator.generators.accounts import AccountCatalog
-from billing_generator.models import FocusBillingRecord
 
 # Distribution of charge categories (mostly usage, with occasional credits/taxes).
 _CHARGE_CATEGORIES = (

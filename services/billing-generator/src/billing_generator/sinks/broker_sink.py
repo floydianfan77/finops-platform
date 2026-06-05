@@ -11,8 +11,9 @@ then set BILLING_SINK=broker (and BROKER_* settings).
 
 from __future__ import annotations
 
+from finops_common.models import FocusBillingRecord
+
 from billing_generator.config import BrokerSettings
-from billing_generator.models import FocusBillingRecord
 from billing_generator.sinks.base import Sink
 
 

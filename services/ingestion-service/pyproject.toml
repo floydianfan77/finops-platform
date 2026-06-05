@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "billing-generator"
+name = "ingestion-service"
 version = "0.1.0"
-description = "Synthetic, FOCUS-aligned cloud billing data generator for the FinOps platform."
+description = "Consumes FOCUS billing records from the broker, validates them, and lands them in storage."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -14,7 +14,7 @@ dependencies = [
     "finops-common>=0.1",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
-    "Faker>=24.0",
+    "confluent-kafka>=2.3",
 ]
 
 [project.optional-dependencies]
@@ -22,13 +22,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
-# Enabled in step 2 (message broker). Kept optional so step 1 stays lightweight.
-broker = [
-    "confluent-kafka>=2.3",
-]
 
 [project.scripts]
-billing-generator = "billing_generator.main:main"
+ingestion-service = "ingestion_service.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

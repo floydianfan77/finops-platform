@@ -1,7 +1,8 @@
 """Typed model for a FOCUS-aligned billing record.
 
-Mirrors ``schemas/billing/focus_billing_record.schema.json``. When a second service
-needs this model, promote it into ``libs/common``.
+Mirrors ``schemas/billing/focus_billing_record.schema.json``. This is the shared,
+authoritative contract imported by every service that produces or consumes billing
+records (the billing generator, the ingestion service, etc.).
 """
 
 from __future__ import annotations

@@ -9,6 +9,48 @@ so the project's history (and the learning journey) is preserved in the repo its
 
 ---
 
+## Session 3 — 2026-06-05 — Step 3 (ingestion service + shared contract)
+
+### Context
+With the broker backbone running, built the consumer side: a service that reads
+`finops.billing.raw`, validates each record, and lands it in queryable storage.
+Also promoted the billing model into a shared library (contract-first).
+
+### Decisions
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Shared contract | Promote `FocusBillingRecord` + topics to `libs/common` (`finops-common`) | One authoritative contract; both services import it |
+| Landing storage | **SQLite** | Real SQL queries, zero setup; great for a portfolio demo |
+| Bad records | **Dead-letter** NDJSON file | Never drop/crash on invalid data; capture for replay |
+| Delivery | At-least-once: commit offsets *after* handling | Combined with idempotent upsert = no dupes/loss |
+| Idempotency | `INSERT OR REPLACE` on `RecordId` | Re-delivery overwrites instead of duplicating |
+
+### Actions
+- Created `libs/common` (`finops_common`): `models.py` (FocusBillingRecord), `topics.py`.
+- Refactored `billing-generator` to import the model from `finops_common`; deleted its
+  local copy; **8/8 tests still pass** (refactor safety net).
+- Built `services/ingestion-service`: `config.py`, `storage/` (`base`, `sqlite_store`,
+  `dead_letter`), `consumer.py` (broker-free `process_message` + `BillingConsumer`
+  loop with manual commits + graceful shutdown), `main.py` CLI. **5 tests pass.**
+- End-to-end run: consumed 86 records Red Panda → SQLite (0 dead-lettered) and queried
+  cost by service/provider/charge-category with SQL.
+- Updated both Dockerfiles to build from repo root (shared lib) and added
+  `ingestion-service` to `docker-compose.yml` (`app` profile).
+
+### Learnings (concepts studied)
+- **Consumer groups & offset commits**; `enable.auto.commit=False` + commit-after-handle.
+- **At-least-once delivery + idempotent writes** as the dup-safe combination.
+- **Validation at the boundary** (`model_validate_json`) turning bytes into trusted models.
+- **Dead-letter queue** pattern for resilient pipelines.
+- **Shared library / contract-first** to stop model drift across services.
+
+### Next steps
+- [ ] Step 4: transformation/aggregation (rollups by account/service/tag/period).
+- [ ] Consider a real consumer-group demo (lag, multiple instances).
+- [ ] Optionally a small query/report CLI or dashboard.
+
+---
+
 ## Session 2 — 2026-06-05 — Step 2 (message broker: Kafka + Red Panda)
 
 ### Context

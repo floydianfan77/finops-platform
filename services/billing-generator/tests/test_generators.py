@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 
 from billing_generator.config import Settings
+from finops_common.models import FocusBillingRecord
+
 from billing_generator.generators import AccountCatalog, BillingGenerator
-from billing_generator.models import FocusBillingRecord
 from billing_generator.sinks import build_sink
 from billing_generator.sinks.file_sink import FileSink
 

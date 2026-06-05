@@ -4,16 +4,23 @@ Shared, importable definitions used across FinOps services: event contracts,
 topic names, and serialization helpers. Keeping these here prevents each service
 from re-defining (and drifting on) the same data shapes.
 
-## Contents (planned)
+Installable as the `finops-common` package (import name `finops_common`).
+
+## Contents
 
 ```
-common/
-├── events/        # Typed event/contract models (mirror schemas/)
-├── topics.py      # Canonical topic name constants (step 2)
-└── serde.py       # (De)serialization helpers (JSON now, Avro later)
+src/finops_common/
+├── models.py      # FocusBillingRecord (the authoritative typed contract)
+└── topics.py      # Canonical topic names (RAW_BILLING_TOPIC, DEAD_LETTER_TOPIC)
 ```
 
-> In step 1, the authoritative billing contract lives in
-> [`../../schemas/billing/focus_billing_record.schema.json`](../../schemas/billing/focus_billing_record.schema.json)
-> and is implemented as a typed model inside the `billing-generator` service.
-> When a second service needs the same model, promote it into this package.
+Both the `billing-generator` (producer) and `ingestion-service` (consumer) import
+the model from here, so the contract is defined **once**. It mirrors
+[`../../schemas/billing/focus_billing_record.schema.json`](../../schemas/billing/focus_billing_record.schema.json)
+(the language-neutral version).
+
+## Install
+
+```bash
+pip install -e libs/common
+```

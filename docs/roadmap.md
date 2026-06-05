@@ -24,11 +24,13 @@ Event backbone running. We run **both** Kafka and Red Panda (same Kafka protocol
 - [x] Define topic naming (`finops.billing.raw`) + partitioning (key = `BillingAccountId`, 3 partitions)
 - [ ] Schema registry? (Avro/JSON Schema) — decide (follow-up ADR)
 
-## Step 3 — Ingestion + storage ⏳
+## Step 3 — Ingestion + storage ✅
 
-- [ ] Consumer service reading `finops.billing.raw`
-- [ ] Validate against schema, dead-letter invalid records
-- [ ] Land raw + normalized data (warehouse or lake)
+- [x] Consumer service reading `finops.billing.raw` (`services/ingestion-service`)
+- [x] Validate against the shared `finops_common` contract, dead-letter invalid records
+- [x] Land validated data in **SQLite** (`billing_records`), idempotent upserts
+- [x] Shared contract promoted to `libs/common` (`finops-common`)
+- [ ] (later) land to a warehouse/lake for scale
 
 ## Step 4 — Transformation ⏳
 

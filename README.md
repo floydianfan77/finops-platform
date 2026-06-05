@@ -7,24 +7,25 @@ cloud cost & usage data. This is a learning/portfolio monorepo built incremental
 
 ```
                 +------------------------+
-   (synthetic)  |   billing-generator    |   <-- YOU ARE HERE (step 1)
+   (synthetic)  |   billing-generator    |   <-- step 1 (done)
    cost data -->|  (fake billing source) |
                 +-----------+------------+
                             |
                             v
                 +------------------------+
-                |   message broker       |   <-- step 2 (Kafka / Red Panda)
+                |   message broker       |   <-- step 2 (done: Kafka / Red Panda)
                 |  (event backbone)      |
                 +-----------+------------+
                             |
               +-------------+-------------+
               v             v             v
         ingestion     transformation   alerting
-        services       (FOCUS norm.)   (budgets)
+        service        (FOCUS norm.)   (budgets)
+        (step 3 done)  (step 4)        (step 5)
               \             |             /
                v            v            v
                 +------------------------+
-                |   storage + API + UI   |   <-- later steps
+                |   storage + API + UI   |   <-- SQLite now; API/UI later
                 +------------------------+
 ```
 
@@ -33,14 +34,15 @@ cloud cost & usage data. This is a learning/portfolio monorepo built incremental
 ```
 finops-platform/
 ├── services/                # Independently deployable services
-│   └── billing-generator/   # Step 1: synthetic FOCUS billing producer
+│   ├── billing-generator/   # Step 1: synthetic FOCUS billing producer
+│   └── ingestion-service/   # Step 3: consumer -> validate -> SQLite
 ├── libs/                    # Shared, importable Python packages
-│   └── common/              # Shared event/contract definitions
+│   └── common/              # finops_common: shared model + topic names
 ├── schemas/                 # Language-agnostic data contracts (JSON Schema)
 │   └── billing/             # FOCUS-aligned billing record schema
 ├── infra/                   # Infrastructure (docker, broker, k8s) [grows over time]
 ├── docs/                    # Architecture, roadmap, ADRs
-├── docker-compose.yml       # Local dev environment
+├── docker-compose.yml       # Local dev environment (brokers + services)
 └── Makefile                 # Common dev commands
 ```
 
@@ -74,7 +76,7 @@ what was built, and why. It's the canonical record of how this project evolved.
 See [`docs/roadmap.md`](docs/roadmap.md). Short version:
 
 - [x] **Step 1** — Synthetic billing generator (FOCUS-aligned)
-- [ ] **Step 2** — Message broker (Kafka / Red Panda) as the event backbone
-- [ ] **Step 3** — Ingestion + storage
+- [x] **Step 2** — Message broker (Kafka **and** Red Panda) as the event backbone
+- [x] **Step 3** — Ingestion service: consume → validate → SQLite (+ dead-letter)
 - [ ] **Step 4** — Transformation / cost normalization
 - [ ] **Step 5** — API + dashboard + budget alerting

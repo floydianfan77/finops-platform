@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sys
 
-from billing_generator.models import FocusBillingRecord
+from finops_common.models import FocusBillingRecord
+
 from billing_generator.sinks.base import Sink
 
 
