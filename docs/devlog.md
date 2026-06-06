@@ -9,6 +9,48 @@ so the project's history (and the learning journey) is preserved in the repo its
 
 ---
 
+## Session 5 — 2026-06-05 — Step 5 (API + dashboard + budget alerts)
+
+### Context
+Gold rollups exist but nothing exposes them. Step 5 adds the consumption layer: a small
+HTTP API to query costs, a dashboard to visualize them, and budgets that turn raw spend
+into actionable **alerts** — the part a FinOps stakeholder actually looks at.
+
+### Decisions
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Web framework | **FastAPI** | Async, typed, auto OpenAPI docs at `/docs` |
+| DB access | **Read-only** SQLite (`mode=ro`) | API must never mutate landed/gold data |
+| App construction | **App factory** `create_app(settings)` | Inject a temp DB in tests cleanly |
+| Dashboard | Static HTML + **Chart.js** (CDN) | Zero build step; charts call the JSON API |
+| Budgets | Pure functions in `budgets.py` | Unit-testable without a DB; clear OK/WARN/OVER rule |
+| Missing gold | Friendly **503** | Tells the user to run aggregation first |
+
+### Actions
+- Built `api-service`:
+  - `queries.py` — read funcs over gold tables (summary, by service/provider/account/tag, timeseries); `GoldNotReady` guard.
+  - `budgets.py` — `status_for()` + `evaluate()` (OK `<80%`, WARN `80–100%`, OVER `>=100%`).
+  - `app.py` — FastAPI factory; `/health`, `/api/summary`, `/api/costs/*`, `/api/budgets`, `/` dashboard.
+  - `static/index.html` — KPI cards, budget table, trend line, top-services bar, provider doughnut, cost-by-team bar.
+  - `config.py` (`API_` settings incl. budgets), `main.py` (uvicorn CLI), `README.md`, `Dockerfile`.
+- Wrote tests (9) with `TestClient` over a seeded temp DB + pure budget tests — all passing.
+- Ran live against the real DB: total billed **$68,460** flagged **OVER** the $60k budget;
+  AWS and GCP OVER, Azure OK. Verified `/health`, `/api/summary`, `/api/costs/by-provider`, `/api/budgets`.
+- Wiring: Makefile (`api` target, install/test), `.env.example` (`API_*`), compose `api-service` (port 8000), roadmap/README/manual.
+
+### Learnings (concepts to study)
+- **REST API design** + auto-generated OpenAPI/Swagger.
+- **App factory + dependency injection** for testable web apps.
+- **Read-only DB connections** as a safety boundary.
+- **Budget/alerting model**: ratios → states → actionable alerts.
+- **Frontend-from-API**: a static page consuming JSON endpoints.
+
+### Next steps
+- [ ] (later) anomaly detection; scheduled alert delivery (email/Slack); auth on the API.
+- [ ] (later) move storage to a warehouse as volume grows.
+
+---
+
 ## Session 4 — 2026-06-05 — Step 4 (transformation / gold aggregations)
 
 ### Context

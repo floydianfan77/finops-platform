@@ -6,6 +6,7 @@ COMMON_DIR := libs/common
 GEN_DIR := services/billing-generator
 INGEST_DIR := services/ingestion-service
 AGG_DIR := services/aggregation-service
+API_DIR := services/api-service
 
 .PHONY: help
 help: ## Show this help
@@ -18,6 +19,7 @@ install: ## Install shared lib + all services (editable, with dev extras)
 	cd $(GEN_DIR) && pip install -e ".[dev]"
 	cd $(INGEST_DIR) && pip install -e ".[dev]"
 	cd $(AGG_DIR) && pip install -e ".[dev]"
+	cd $(API_DIR) && pip install -e ".[dev]"
 
 .PHONY: gen
 gen: ## Run the billing generator to stdout
@@ -39,11 +41,16 @@ ingest: ## Consume the topic into SQLite (from the beginning)
 aggregate: ## Build gold rollups from the landed SQLite data (+ summary)
 	cd $(AGG_DIR) && aggregation-service --db-path ../ingestion-service/data/finops.db --report
 
+.PHONY: api
+api: ## Serve the cost API + dashboard at http://127.0.0.1:8000
+	cd $(API_DIR) && api-service --db-path ../ingestion-service/data/finops.db
+
 .PHONY: test
 test: ## Run tests for all services
 	cd $(GEN_DIR) && pytest -q
 	cd $(INGEST_DIR) && pytest -q
 	cd $(AGG_DIR) && pytest -q
+	cd $(API_DIR) && pytest -q
 
 .PHONY: lint
 lint: ## Lint with ruff

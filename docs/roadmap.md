@@ -42,8 +42,12 @@ Gold-layer rollups built from the landed `billing_records` table (`services/aggr
 - [x] Tests: correct sums, tag expansion, idempotent rebuild
 - [ ] (later) normalize/enrich to canonical FOCUS as data sources grow
 
-## Step 5 — API + UI + alerting ⏳
+## Step 5 — API + UI + alerting ✅
 
-- [ ] Query API
-- [ ] Dashboard (cost trends, top services, anomalies)
-- [ ] Budgets & alerts
+Read API + dashboard + budget alerts over the gold rollups (`services/api-service`).
+
+- [x] Query API (FastAPI): summary, by service/provider/account/tag, daily timeseries
+- [x] Dashboard (Chart.js): KPIs, trend, top services, provider split, cost by team
+- [x] Budgets & alerts (OK / WARN / OVER) per total and per provider
+- [x] Auto-generated OpenAPI docs at `/docs`; tests with FastAPI `TestClient`
+- [ ] (later) anomaly detection / scheduled alert delivery (email/Slack)

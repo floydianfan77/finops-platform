@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinOps Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --panel2: #273449; --text: #e2e8f0;
+      --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e; --warn: #f59e0b; --over: #ef4444;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); }
+    header { padding: 22px 28px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: baseline; gap: 14px; }
+    header h1 { font-size: 20px; margin: 0; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    main { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
+    .grid { display: grid; gap: 18px; }
+    .kpis { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 8px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px; }
+    .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .kpi .value { font-size: 26px; font-weight: 650; margin-top: 6px; }
+    .charts { grid-template-columns: 1fr 1fr; }
+    .charts .full { grid-column: 1 / -1; }
+    .card h2 { font-size: 14px; margin: 0 0 14px; color: var(--text); font-weight: 600; }
+    canvas { max-height: 300px; }
+    .budgets { margin-top: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.OK { background: rgba(34,197,94,.15); color: var(--ok); }
+    .badge.WARN { background: rgba(245,158,11,.15); color: var(--warn); }
+    .badge.OVER { background: rgba(239,68,68,.15); color: var(--over); }
+    .bar { height: 6px; border-radius: 999px; background: var(--panel2); overflow: hidden; margin-top: 6px; }
+    .bar > span { display: block; height: 100%; }
+    .banner { padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; font-size: 14px; display: none; }
+    .banner.show { display: block; }
+    .banner.err { background: rgba(239,68,68,.12); color: #fecaca; border: 1px solid rgba(239,68,68,.4); }
+    @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FinOps Dashboard</h1>
+    <span class="sub">cloud cost &amp; usage overview — powered by the gold rollups</span>
+  </header>
+  <main>
+    <div id="banner" class="banner err"></div>
+
+    <div class="grid kpis" id="kpis"></div>
+
+    <div class="card budgets">
+      <h2>Budget status &amp; alerts</h2>
+      <table id="budgetTable">
+        <thead><tr><th>Scope</th><th>Spend</th><th>Budget</th><th>Used</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="grid charts" style="margin-top:18px">
+      <div class="card full"><h2>Daily spend trend (billed cost)</h2><canvas id="trend"></canvas></div>
+      <div class="card"><h2>Top services</h2><canvas id="services"></canvas></div>
+      <div class="card"><h2>Cost by provider</h2><canvas id="providers"></canvas></div>
+      <div class="card full"><h2>Cost by team (tag)</h2><canvas id="teams"></canvas></div>
+    </div>
+  </main>
+
+  <script>
+    const fmt = (n) => "$" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const PALETTE = ["#38bdf8", "#a78bfa", "#34d399", "#fbbf24", "#fb7185", "#60a5fa", "#f472b6", "#4ade80"];
+
+    async function getJSON(path) {
+      const r = await fetch(path);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.detail || (r.status + " " + r.statusText));
+      }
+      return r.json();
+    }
+
+    function showError(msg) {
+      const b = document.getElementById("banner");
+      b.textContent = "⚠ " + msg;
+      b.classList.add("show");
+    }
+
+    Chart.defaults.color = "#94a3b8";
+    Chart.defaults.borderColor = "#334155";
+
+    function kpi(label, value) {
+      return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    }
+
+    async function loadKpis() {
+      const s = await getJSON("/api/summary");
+      document.getElementById("kpis").innerHTML = [
+        kpi("Total billed", fmt(s.total_billed)),
+        kpi("Effective cost", fmt(s.total_effective)),
+        kpi("Records", Number(s.record_count).toLocaleString()),
+        kpi("Days", s.days),
+        kpi("Providers", s.providers),
+      ].join("");
+    }
+
+    async function loadBudgets() {
+      const b = await getJSON("/api/budgets");
+      const rows = [b.overall, ...b.providers];
+      const colorFor = (st) => st === "OVER" ? "var(--over)" : st === "WARN" ? "var(--warn)" : "var(--ok)";
+      document.querySelector("#budgetTable tbody").innerHTML = rows.map(r => {
+        const pct = Math.min(100, Math.round(r.ratio * 100));
+        return `<tr>
+          <td>${r.name}</td>
+          <td class="num">${fmt(r.spend)}</td>
+          <td class="num">${fmt(r.budget)}</td>
+          <td class="num">${pct}%<div class="bar"><span style="width:${pct}%;background:${colorFor(r.status)}"></span></div></td>
+          <td><span class="badge ${r.status}">${r.status}</span></td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function loadTrend() {
+      const data = await getJSON("/api/costs/timeseries");
+      new Chart(document.getElementById("trend"), {
+        type: "line",
+        data: { labels: data.map(d => d.usage_date),
+          datasets: [{ label: "Billed cost", data: data.map(d => d.billed_cost),
+            borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.15)", fill: true, tension: .3 }] },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    async function loadServices() {
+      const data = await getJSON("/api/costs/by-service?limit=8");
+      new Chart(document.getElementById("services"), {
+        type: "bar",
+        data: { labels: data.map(d => d.service_name),
+          datasets: [{ data: data.map(d => d.billed_cost), backgroundColor: "#a78bfa" }] },
+        options: { indexAxis: "y", plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+      });
+    }
+
+    async function loadProviders() {
+      const data = await getJSON("/api/costs/by-provider");
+      new Chart(document.getElementById("providers"), {
+        type: "doughnut",
+        data: { labels: data.map(d => d.provider_name),
+          datasets: [{ data: data.map(d => d.billed_cost), backgroundColor: PALETTE }] },
+        options: { plugins: { legend: { position: "right" } } }
+      });
+    }
+
+    async function loadTeams() {
+      const data = await getJSON("/api/costs/by-tag?key=team");
+      new Chart(document.getElementById("teams"), {
+        type: "bar",
+        data: { labels: data.map(d => d.tag_value),
+          datasets: [{ data: data.map(d => d.billed_cost), backgroundColor: "#34d399" }] },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    (async () => {
+      try {
+        await Promise.all([loadKpis(), loadBudgets(), loadTrend(), loadServices(), loadProviders(), loadTeams()]);
+      } catch (e) {
+        showError(e.message + "  (Tip: run ingestion + aggregation so the gold tables exist.)");
+      }
+    })();
+  </script>
+</body>
+</html>

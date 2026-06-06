@@ -64,6 +64,24 @@ services:
     volumes:
       - ./data:/app/data
 
+  # Step 5: read API + dashboard + budget alerts. Browse at http://localhost:8000
+  api-service:
+    build:
+      context: .
+      dockerfile: services/api-service/Dockerfile
+    container_name: finops-api
+    profiles: ["app"]
+    env_file:
+      - .env
+    environment:
+      API_DB_PATH: ${API_DB_PATH:-/app/data/finops.db}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+
   # =========================================================================
   # OPTION A - Red Panda (Kafka-compatible, single C++ binary, lightweight)
   # Host port: 9092

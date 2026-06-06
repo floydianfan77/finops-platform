@@ -21,10 +21,11 @@ incrementally in Python. It explains the *why* behind every decision, the
 7. [Step 2 — Message broker (Kafka & Red Panda)](#7-step-2--message-broker-kafka--red-panda)
 8. [Step 3 — Ingestion service](#8-step-3--ingestion-service)
 9. [Step 4 — Transformation (gold rollups)](#9-step-4--transformation-gold-rollups)
-10. [Running the whole platform](#10-running-the-whole-platform)
-11. [Python & engineering concepts learned](#11-python--engineering-concepts-learned)
-12. [Roadmap (what's next)](#12-roadmap-whats-next)
-13. [What this project demonstrates](#13-what-this-project-demonstrates)
+10. [Step 5 — API + dashboard + budget alerts](#10-step-5--api--dashboard--budget-alerts)
+11. [Running the whole platform](#11-running-the-whole-platform)
+12. [Python & engineering concepts learned](#12-python--engineering-concepts-learned)
+13. [Roadmap (what's next)](#13-roadmap-whats-next)
+14. [What this project demonstrates](#14-what-this-project-demonstrates)
 
 ---
 
@@ -110,7 +111,7 @@ flowchart TD
     DLQ["dead_letter.ndjson<br/>(quarantined)"]
     A["aggregation-service<br/>(Step 4)<br/>rebuild gold rollups"]
     GOLD[("agg_cost_by_service<br/>agg_cost_by_account<br/>agg_cost_by_provider<br/>agg_cost_by_tag<br/>(gold)")]
-    API["API + dashboard + alerts<br/>(Step 5 · planned)"]
+    API["api-service<br/>(Step 5)<br/>FastAPI + dashboard + budget alerts"]
 
     G -- "FOCUS JSON" --> B
     B -- "stream events" --> I
@@ -118,7 +119,7 @@ flowchart TD
     I -- "invalid" --> DLQ
     DB -- "GROUP BY day / service / tag" --> A
     A --> GOLD
-    GOLD -.-> API
+    GOLD -- "read-only queries" --> API
 ```
 
 ### Data flow in one sentence
@@ -141,6 +142,8 @@ where they can be analyzed with SQL.
 | Broker | **Apache Kafka** + **Red Panda** | Same protocol; both run side by side |
 | Kafka client | **confluent-kafka** | Works unchanged against Kafka or Red Panda |
 | Storage | **SQLite** | Real SQL, zero setup |
+| API | **FastAPI** + **uvicorn** | Typed endpoints, auto OpenAPI docs |
+| Dashboard | **Chart.js** (CDN) | Charts with no build step |
 | Containers | **Docker / Docker Compose** | Reproducible local environment |
 | Testing | **pytest** | Fast, convention-based |
 | Lint/format | **ruff** | Fast, all-in-one |
@@ -211,12 +214,25 @@ FinOPS Project/
 │   │   │   ├── scheduler.py       # the timer loop
 │   │   │   └── main.py            # CLI
 │   │   └── tests/
-│   └── ingestion-service/        # Step 3: consumer -> validate -> SQLite
-│       ├── src/ingestion_service/
-│       │   ├── config.py
-│       │   ├── storage/           # base | sqlite_store | dead_letter
-│       │   ├── consumer.py        # validation + consume loop
-│       │   └── main.py            # CLI
+│   ├── ingestion-service/        # Step 3: consumer -> validate -> SQLite
+│   │   ├── src/ingestion_service/
+│   │   │   ├── config.py
+│   │   │   ├── storage/           # base | sqlite_store | dead_letter
+│   │   │   ├── consumer.py        # validation + consume loop
+│   │   │   └── main.py            # CLI
+│   │   └── tests/
+│   ├── aggregation-service/      # Step 4: SQLite -> gold rollups
+│   │   ├── src/aggregation_service/
+│   │   │   ├── transform.py       # CREATE TABLE AS SELECT rollups
+│   │   │   └── main.py            # CLI (--report)
+│   │   └── tests/
+│   └── api-service/              # Step 5: FastAPI API + dashboard + budgets
+│       ├── src/api_service/
+│       │   ├── queries.py         # read-only gold queries
+│       │   ├── budgets.py         # OK/WARN/OVER evaluation
+│       │   ├── app.py             # FastAPI factory + endpoints
+│       │   ├── static/index.html  # Chart.js dashboard
+│       │   └── main.py            # uvicorn CLI
 │       └── tests/
 ├── libs/
 │   └── common/                   # finops_common: SHARED contract
@@ -544,22 +560,104 @@ Top services by billed cost      Cost by tag: team
 
 ---
 
-## 10. Running the whole platform
+## 10. Step 5 — API + dashboard + budget alerts
+
+**Service:** `services/api-service` · **Reads:** gold `agg_*` tables · **Serves:** JSON + HTML
+
+### 10.1 What it does
+The previous steps produce data; Step 5 finally **exposes** it. A small **FastAPI** app
+turns the gold tables into a read API, evaluates **budgets** into alerts, and serves a
+**dashboard** — the layer a FinOps stakeholder actually interacts with.
+
+```mermaid
+flowchart LR
+    GOLD[("agg_* gold tables")]
+    Q["queries.py<br/>(read-only SQL)"]
+    BUD["budgets.py<br/>OK / WARN / OVER"]
+    API["FastAPI app<br/>/api/* + /health"]
+    UI["dashboard<br/>Chart.js"]
+    GOLD --> Q --> API
+    Q --> BUD --> API
+    API --> UI
+```
+
+### 10.2 The endpoints
+FastAPI auto-generates interactive docs at **`/docs`** (Swagger UI) from the type hints.
+
+| Path | Returns |
+|------|---------|
+| `/` | HTML dashboard |
+| `/health` | status + whether gold tables exist |
+| `/api/summary` | totals (billed, effective, records, days, providers) |
+| `/api/costs/by-service?limit=N` | top services |
+| `/api/costs/by-provider` | per-provider cost |
+| `/api/costs/by-account?limit=N` | per-account cost |
+| `/api/costs/by-tag?key=team` | cost allocated by a tag |
+| `/api/costs/timeseries` | daily total billed cost (trend) |
+| `/api/budgets` | budget status + active alerts |
+
+### 10.3 Three design choices worth knowing
+- **App factory** — `create_app(settings)` builds the app from injected settings, so a
+  test can spin up the API against a temporary database. `app = create_app()` at import
+  time is what uvicorn serves in production.
+- **Read-only connections** — the API opens SQLite with `file:...?mode=ro`. It physically
+  *cannot* modify the data it serves — a clean safety boundary.
+- **Graceful "not ready"** — if the gold tables are missing, queries raise `GoldNotReady`
+  and the API returns **HTTP 503** with "run the aggregation service first" instead of a
+  cryptic 500.
+
+### 10.4 Budgets → alerts
+`budgets.py` is pure (no DB), so it's trivially testable. The rule:
+
+```
+ratio = spend / budget
+ratio <  0.8   -> OK
+0.8 <= ratio < 1.0 -> WARN
+ratio >= 1.0   -> OVER
+```
+
+`evaluate()` grades the **total** and each **provider**, then collects every WARN/OVER
+into an `alerts` list with a count — exactly what a dashboard banner or notification job
+would consume.
+
+### 10.5 The dashboard
+`static/index.html` is a single self-contained page (Chart.js via CDN). On load it calls
+the JSON endpoints in parallel and renders KPI cards, a **budget table** with colored
+status badges, a daily **trend** line, a **top-services** bar, a **provider** doughnut,
+and a **cost-by-team** bar. No build step, no framework — it just consumes the API.
+
+### 10.6 Proven output (live, over the 86 landed records)
+```
+GET /api/summary   -> total_billed 68,460.41 | records 86 | providers 3
+GET /api/budgets   -> overall OVER (68,460 / 60,000 = 1.14)
+                      AWS  OVER (47,058 / 45,000)   Azure OK (9,030 / 12,000)
+                      GCP  OVER (12,373 / 12,000)   alert_count = 3
+```
+
+### 10.7 Tests
+Nine tests (`tests/test_api.py`) use FastAPI's `TestClient` over a seeded temp DB:
+health/gold-ready, summary totals, provider ordering, tag lookup, dashboard HTML,
+budget OVER/WARN flagging, the 503 path, plus pure `status_for`/`evaluate` unit tests.
+
+---
+
+## 11. Running the whole platform
 
 > Prerequisites: Python 3.10+, Docker Desktop running. Commands shown for Windows
 > PowerShell; adjust paths/venv activation for macOS/Linux.
 
-### 10.1 Install (editable)
+### 11.1 Install (editable)
 ```powershell
 # from the repo root
 pip install -e libs/common
 cd services/billing-generator ; pip install -e ".[dev,broker]" ; cd ../..
 cd services/ingestion-service ; pip install -e ".[dev]" ; cd ../..
 cd services/aggregation-service ; pip install -e ".[dev]" ; cd ../..
+cd services/api-service ; pip install -e ".[dev]" ; cd ../..
 ```
 (Or, where `make` is available: `make install`.)
 
-### 10.2 Start a broker
+### 11.2 Start a broker
 ```powershell
 # Red Panda (has a web console at http://localhost:8080)
 docker compose --profile redpanda up -d
@@ -571,7 +669,7 @@ docker compose --profile kafka up -d
 docker compose --profile redpanda --profile kafka up -d
 ```
 
-### 10.3 Create the topic (3 partitions)
+### 11.3 Create the topic (3 partitions)
 ```powershell
 # Red Panda
 docker exec finops-redpanda rpk topic create finops.billing.raw --partitions 3 --replicas 1
@@ -581,7 +679,7 @@ docker exec finops-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka
   --create --topic finops.billing.raw --partitions 3 --replication-factor 1
 ```
 
-### 10.4 Produce billing records
+### 11.4 Produce billing records
 ```powershell
 cd services/billing-generator
 
@@ -595,21 +693,29 @@ billing-generator --sink broker --batch-size 4 --interval 2 --max-batches 20
 $env:BROKER_BOOTSTRAP_SERVERS="localhost:9094"; billing-generator --sink broker --max-batches 5
 ```
 
-### 10.5 Consume into SQLite
+### 11.5 Consume into SQLite
 ```powershell
 cd services/ingestion-service
 ingestion-service --from-beginning --max-messages 100        # Red Panda
 # or:  ingestion-service --bootstrap-servers localhost:9094 --from-beginning
 ```
 
-### 10.6 Build the gold rollups (Step 4)
+### 11.6 Build the gold rollups (Step 4)
 ```powershell
 cd services/aggregation-service
 aggregation-service --db-path ../ingestion-service/data/finops.db --report
 ```
 (Or, where `make` is available: `make aggregate`.) Re-run any time — it's idempotent.
 
-### 10.7 Query the results
+### 11.7 Serve the API + dashboard (Step 5)
+```powershell
+cd services/api-service
+api-service --db-path ../ingestion-service/data/finops.db
+# Dashboard: http://127.0.0.1:8000     API docs: http://127.0.0.1:8000/docs
+```
+(Or, where `make` is available: `make api`.)
+
+### 11.8 Query the results
 ```powershell
 # raw (bronze)
 python -c "import sqlite3; c=sqlite3.connect('./data/finops.db'); print(c.execute('SELECT service_name, ROUND(SUM(billed_cost),2) FROM billing_records GROUP BY service_name ORDER BY 2 DESC').fetchall())"
@@ -618,18 +724,19 @@ python -c "import sqlite3; c=sqlite3.connect('./data/finops.db'); print(c.execut
 python -c "import sqlite3; c=sqlite3.connect('./data/finops.db'); print(c.execute(\"SELECT tag_value, ROUND(SUM(billed_cost),2) FROM agg_cost_by_tag WHERE tag_key='team' GROUP BY tag_value ORDER BY 2 DESC\").fetchall())"
 ```
 
-### 10.8 Inspect visually
+### 11.9 Inspect visually
 Open the Red Panda console at **http://localhost:8080** → Topics →
 `finops.billing.raw` to browse messages, keys, partitions, and offsets.
 
-### 10.9 Run tests
+### 11.10 Run tests
 ```powershell
 cd services/billing-generator ; python -m pytest -q ; cd ../..
 cd services/ingestion-service ; python -m pytest -q ; cd ../..
 cd services/aggregation-service ; python -m pytest -q ; cd ../..
+cd services/api-service ; python -m pytest -q ; cd ../..
 ```
 
-### 10.10 Shut down
+### 11.11 Shut down
 ```powershell
 docker compose --profile redpanda --profile kafka down      # stop (keep data)
 docker compose --profile redpanda --profile kafka down -v   # stop + wipe broker data
@@ -637,7 +744,7 @@ docker compose --profile redpanda --profile kafka down -v   # stop + wipe broker
 
 ---
 
-## 11. Python & engineering concepts learned
+## 12. Python & engineering concepts learned
 
 A checklist of what this project teaches, by area.
 
@@ -673,6 +780,12 @@ A checklist of what this project teaches, by area.
 - Medallion architecture (bronze → gold); idempotent transforms (`CREATE TABLE AS SELECT`)
 - Pre-aggregation for fast reads; tag-based cost allocation via `json_each`
 
+**APIs & web**
+- REST API design with FastAPI; auto-generated OpenAPI/Swagger (`/docs`)
+- App-factory pattern + dependency injection for testable apps
+- Read-only DB connections as a safety boundary; graceful 503 on missing data
+- Budget/alert modeling (ratio → OK/WARN/OVER); a static dashboard consuming a JSON API
+
 **Tooling & ops**
 - pytest (fixtures, assertions, failure-path tests)
 - Docker & Docker Compose (profiles, volumes, build contexts)
@@ -681,7 +794,7 @@ A checklist of what this project teaches, by area.
 
 ---
 
-## 12. Roadmap (what's next)
+## 13. Roadmap (what's next)
 
 | Step | Status | Summary |
 |------|--------|---------|
@@ -689,11 +802,12 @@ A checklist of what this project teaches, by area.
 | 2 — Message broker | ✅ | Kafka **and** Red Panda; topic + partitioning |
 | 3 — Ingestion + storage | ✅ | Consume → validate → SQLite (+ dead-letter) |
 | 4 — Transformation | ✅ | Pre-aggregated *gold* rollups (cost by service/account/provider/tag/day); idempotent rebuilds |
-| 5 — API + UI + alerting | ⏳ | Query API, dashboard (trends, top services, anomalies), budgets & alerts |
+| 5 — API + UI + alerting | ✅ | FastAPI query API, Chart.js dashboard, budget alerts (OK/WARN/OVER) |
+| 6 — Hardening (later) | ⏳ | Anomaly detection, scheduled alert delivery (email/Slack), API auth, warehouse storage |
 
 ---
 
-## 13. What this project demonstrates
+## 14. What this project demonstrates
 
 For a portfolio, this project shows the ability to:
 
@@ -702,6 +816,10 @@ For a portfolio, this project shows the ability to:
 - **Work with Kafka-compatible brokers**, including real operational gotchas
   (advertised listeners, partitioning, consumer groups).
 - **Build resilient data pipelines** with validation, idempotency, and dead-lettering.
+- **Transform raw data into analytics-ready layers** (medallion bronze → gold) with
+  idempotent, re-runnable aggregations.
+- **Ship a read API and dashboard** (FastAPI + Chart.js) with budget alerting on top of
+  the pipeline's output.
 - **Model real-world data** to an industry standard (FOCUS) with a language-neutral
   contract (JSON Schema) shared across services.
 - **Engineer for quality**: tests, configuration, Docker, a monorepo, ADRs, and a
@@ -710,5 +828,5 @@ For a portfolio, this project shows the ability to:
 
 ---
 
-*This manual reflects the project through Step 3. See `docs/devlog.md` for the
+*This manual reflects the project through Step 5. See `docs/devlog.md` for the
 session-by-session history and `docs/roadmap.md` for the live roadmap.*
