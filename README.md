@@ -69,6 +69,17 @@ pip install -e ".[dev]"
 billing-generator --sink stdout --interval 2 --batch-size 5
 ```
 
+## See the dashboard (step 5)
+
+Once data has been ingested and aggregated, **double-click `run-api.bat`** (Windows) — it
+opens the dashboard at **http://127.0.0.1:8000** and the API docs at `/docs`. From a shell
+you can instead run `make api`, or:
+
+```bash
+cd services/api-service
+api-service --db-path ../ingestion-service/data/finops.db
+```
+
 ## Project history
 
 Every work session is logged in [`docs/devlog.md`](docs/devlog.md) — decisions,
