@@ -122,6 +122,9 @@ flowchart TD
     GOLD -- "read-only queries" --> API
 ```
 
+> New here? See [`DATAFLOW.md`](DATAFLOW.md) for a beginner-friendly trace that follows a
+> single record from creation to the dashboard, with one big annotated diagram.
+
 ### Data flow in one sentence
 The **generator** invents realistic cloud charges and publishes them to a **broker**;
 the **ingestion service** consumes them, **validates** each against a shared contract,

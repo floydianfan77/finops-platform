@@ -87,6 +87,13 @@ api-service --db-path ../ingestion-service/data/finops.db
 
 ![FinOps dashboard](docs/assets/dashboard.png)
 
+## Documentation
+
+- [`docs/DATAFLOW.md`](docs/DATAFLOW.md) — **start here**: the whole project in one diagram,
+  following a single fake record from creation to dashboard (beginner-friendly).
+- [`docs/MANUAL.md`](docs/MANUAL.md) — the full study guide (every step, deep-dived).
+- [`docs/roadmap.md`](docs/roadmap.md) — the live roadmap.
+
 ## Project history
 
 Every work session is logged in [`docs/devlog.md`](docs/devlog.md) — decisions,
