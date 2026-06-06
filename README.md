@@ -3,6 +3,11 @@
 An open-source, event-driven **FinOps** platform for ingesting, processing, and analyzing
 cloud cost & usage data. This is a learning/portfolio monorepo built incrementally.
 
+![FinOps dashboard](docs/assets/dashboard.png)
+
+*The Step 5 dashboard: KPIs, budget alerts (OK/WARN/OVER), cost trend, top services,
+provider split, and cost-by-team — all served by the FastAPI service over the gold tables.*
+
 ## Vision
 
 ```
@@ -79,6 +84,8 @@ you can instead run `make api`, or:
 cd services/api-service
 api-service --db-path ../ingestion-service/data/finops.db
 ```
+
+![FinOps dashboard](docs/assets/dashboard.png)
 
 ## Project history
 

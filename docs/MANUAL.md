@@ -626,6 +626,8 @@ the JSON endpoints in parallel and renders KPI cards, a **budget table** with co
 status badges, a daily **trend** line, a **top-services** bar, a **provider** doughnut,
 and a **cost-by-team** bar. No build step, no framework — it just consumes the API.
 
+![FinOps dashboard](assets/dashboard.png)
+
 ### 10.6 Proven output (live, over the 86 landed records)
 ```
 GET /api/summary   -> total_billed 68,460.41 | records 86 | providers 3
