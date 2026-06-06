@@ -37,6 +37,9 @@ output/
 *.jsonl
 *.parquet
 
+# Personal / local-only notes (not part of the repo)
+_personal/
+
 # IDE / OS
 .idea/
 .vscode/
